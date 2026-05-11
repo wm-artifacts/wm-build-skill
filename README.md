@@ -1,6 +1,6 @@
 # wavemaker-build
 
-A Claude Code skill that builds a WaveMaker application into any of six artifact shapes — WAR, full-app Docker image, frontend-only zip, backend-only WAR/JAR, frontend nginx container, or backend Tomcat container — so the resulting artifact can be deployed to whichever target you're aiming for (Tomcat, EC2, Kubernetes, S3 + CDN, App Service, etc.).
+A Claude Code skill that builds a WaveMaker application into any of four artifact shapes — WAR, full-app Docker image, frontend-only zip, or backend-only WAR/JAR — so the resulting artifact can be deployed to whichever target you're aiming for (Tomcat, EC2, Kubernetes, S3 + CDN, App Service, etc.).
 
 The skill **produces artifacts**. It does not push to registries or deploy remotely.
 
@@ -12,8 +12,6 @@ The skill **produces artifacts**. It does not push to registries or deploy remot
 | Full Docker image | `<app>:latest` in local Docker | EC2 / ECS / Kubernetes / GKE / Azure CI |
 | Frontend only | `target/<app>-frontend.zip` | S3 + CloudFront / Netlify / Vercel / any CDN |
 | Backend only | `target/<app>-backend.war` (or per-service JARs) | Tomcat / Beanstalk / App Service / Heroku |
-| Frontend container | `<app>-frontend:latest` (nginx + UI) | Any Docker host; pairs with split deploys |
-| Backend container | `<app>-backend:latest` (Tomcat or JRE + stripped WAR) | Behind an internal LB; UI on a CDN calls it |
 
 ## Inputs the skill accepts
 
@@ -35,8 +33,6 @@ Open Claude Code inside your WaveMaker app folder and use natural phrasing. The 
 | `package this wm app as a docker image` | Full Docker image |
 | `give me only the frontend artifacts` | Frontend zip |
 | `build only the backend` | Backend WAR/JAR |
-| `split frontend and backend into separate containers` | Both Docker variants |
-| `build only the frontend as an nginx container` | Frontend container |
 | `build my wm app multiple ways` | Asks which modes |
 | `build with profile staging` | Same as above, but uses `-P staging` |
 
@@ -65,21 +61,6 @@ The skill:
 5. Runs `./mvnw -B -DskipTests -P deployment clean package`
 6. Verifies `target/MyApp-1.0.0.war`
 7. Reports: path + deploy hint (drop into Tomcat `webapps/`)
-
-## Example walkthrough — split containers
-
-You say:
-```
-split frontend and backend into separate docker containers
-```
-
-The skill:
-1. Locates the app
-2. Builds the WAR (same profile selection as above)
-3. Extracts UI → `target/frontend/` and strips the WAR → `target/<app>-backend.war`
-4. Writes `Dockerfile.frontend` (nginx) and `Dockerfile.backend` (Tomcat)
-5. Builds both images: `<app>-frontend:latest`, `<app>-backend:latest`
-6. Prints run commands for each
 
 ## What it deliberately does NOT do
 

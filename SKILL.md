@@ -1,11 +1,11 @@
 ---
 name: wavemaker-build
-description: Build a WaveMaker application in one or more ways - WAR package, Docker image, frontend-only artifacts (UI bundle), or backend-only artifacts (services WAR/JAR) - and optionally run the frontend or backend as its own Docker container. Use when the user says things like "build my wavemaker app", "package wavemaker as war", "give me only the frontend artifacts from my wm app", "build only the backend", "build wm app multiple ways", "split frontend and backend into separate containers", or asks how to package a WaveMaker app for deployment in any of the modes from https://docs.wavemaker.ai/docs/build-and-deploy/overview.
+description: Build a WaveMaker application in one or more ways - WAR package, Docker image, frontend-only artifacts (UI bundle), or backend-only artifacts (services WAR/JAR). Use when the user says things like "build my wavemaker app", "package wavemaker as war", "give me only the frontend artifacts from my wm app", "build only the backend", "build wm app multiple ways", or asks how to package a WaveMaker app for deployment in any of the modes from https://docs.wavemaker.ai/docs/build-and-deploy/overview.
 ---
 
 # WaveMaker → build artifacts (WAR / Docker / frontend / backend)
 
-Goal: take a WaveMaker application and produce the artifact(s) the user wants — a deployable WAR, a Docker image, just the UI bundle, just the backend services — and optionally a Docker container that serves the frontend (nginx) or the backend (Tomcat) on its own.
+Goal: take a WaveMaker application and produce the artifact(s) the user wants — a deployable WAR, a Docker image, just the UI bundle, or just the backend services.
 
 This skill is self-contained. It works whether the source is a checked-out project tree or an exported WaveMaker `.zip`, and it ships every Dockerfile template inline.
 
@@ -19,8 +19,6 @@ The skill exists to produce the right *shape* of artifact for whichever deployme
 | **Docker image (full app)** | Any Docker host — EC2, ECS, GKE, Kubernetes, Azure Container Instances, on-prem |
 | **Frontend zip** | Any static host — S3 + CloudFront, Netlify, Vercel, Azure Static Web Apps, GitHub Pages, nginx from disk, any CDN |
 | **Backend WAR/JAR** | Tomcat (drop into `webapps/`), `java -jar` on a VM, AWS Elastic Beanstalk, Azure App Service, Heroku |
-| **Frontend container (nginx)** | Same as Docker host, lighter image; pairs with a split deploy where UI scales independently of the API |
-| **Backend container (Tomcat / JRE)** | Backend-behind-LB pattern: UI on a CDN calls into this container running the services |
 
 If the user's deployment style isn't obvious, ask which target they're aiming for and pick the matching mode in Step 2.
 
@@ -56,9 +54,7 @@ If the user already named the build mode in their prompt (e.g. "give me only the
 > 2. **Docker image (full app)** — runnable container of the whole app
 > 3. **Frontend only** — UI bundle (html/js/css) as a zip, for CDN/static hosting
 > 4. **Backend only** — services WAR/JAR with the UI stripped
-> 5. **Frontend in Docker** — frontend bundle served by nginx in a container
-> 6. **Backend in Docker** — backend artifact running in a Tomcat container
-> 7. **All artifacts (1, 3, 4)**
+> 5. **All artifacts (1, 3, 4)**
 
 Don't assume; multi-select is fine.
 
@@ -257,56 +253,12 @@ ls APP_DIR/services/*/target/*.jar 2>/dev/null
 
   Output: `target/<artifactId>-backend.war` — Spring services, web.xml, classes, libs only.
 
-### 4e. Frontend in Docker (mode 5)
-
-Requires the frontend-only build from 4c first. Then write `APP_DIR/Dockerfile.frontend` (don't overwrite if it already exists — write `Dockerfile.frontend.new` and tell the user):
-
-```dockerfile
-# syntax=docker/dockerfile:1
-FROM nginx:1.27-alpine
-COPY target/frontend/ /usr/share/nginx/html/
-EXPOSE 80
-```
-
-Build and (optionally) run:
-
-```bash
-docker build -f Dockerfile.frontend -t <artifactId-lowercased>-frontend:latest .
-docker run --rm -p 8080:80 <artifactId-lowercased>-frontend:latest
-```
-
-If the WaveMaker UI calls a backend at a fixed origin, mention that the user needs to either:
-- set the backend URL in the WaveMaker app's Variables before the build, or
-- proxy `/services` through nginx — but only scaffold an `nginx.conf` if the user asks.
-
-### 4f. Backend in Docker (mode 6)
-
-Requires the backend-only artifact from 4d. Then write `APP_DIR/Dockerfile.backend` (don't overwrite; write `.new` and tell the user):
-
-```dockerfile
-# syntax=docker/dockerfile:1
-FROM tomcat:9.0-jre11-temurin
-RUN rm -rf /usr/local/tomcat/webapps/ROOT
-COPY target/<artifactId>-backend.war /usr/local/tomcat/webapps/ROOT.war
-EXPOSE 8080
-CMD ["catalina.sh", "run"]
-```
-
-Match the JDK to `<java.version>` from `pom.xml` (bump to `jre17-temurin` if the project targets 17). If the project is a Spring Boot fat jar (`<packaging>jar</packaging>`), use `eclipse-temurin:11-jre` and `ENTRYPOINT ["java","-jar","/app/app.jar"]` instead.
-
-Build and (optionally) run:
-
-```bash
-docker build -f Dockerfile.backend -t <artifactId-lowercased>-backend:latest .
-docker run --rm -p 8080:8080 <artifactId-lowercased>-backend:latest
-```
-
 ## Step 5 — preflight checks
 
 - **Maven**: if neither `./mvnw` nor `mvn` is on PATH, stop and tell the user; don't try to install.
 - **Java**: `java -version` must be ≥ the project's target JDK.
 - **Node**: only required for the local Maven build (the `ui-build.js` step). Skip the check if the user only picked Docker modes — the Dockerfile build stage has its own Node.
-- **Docker**: only required for modes 2, 5, 6. Run `command -v docker` and `docker info >/dev/null 2>&1` before any `docker build`. If it's missing or the daemon's down, stop with a clear message — don't retry.
+- **Docker**: only required for mode 2. Run `command -v docker` and `docker info >/dev/null 2>&1` before any `docker build`. If it's missing or the daemon's down, stop with a clear message — don't retry.
 
 ## Step 6 — report back
 
@@ -316,8 +268,6 @@ For each artifact built, give one short bullet:
 - **Docker image (full)** → image tag + `docker run --rm -p 8080:8080 <tag>`
 - **Frontend zip** → path + "extract to any static host / S3 / nginx"
 - **Backend WAR/JAR** → path + how to run (Tomcat drop-in or `java -jar`)
-- **Frontend container** → image tag + run command
-- **Backend container** → image tag + run command
 
 Keep the report compact — the user can see the file tree themselves.
 
@@ -326,7 +276,7 @@ Keep the report compact — the user can see the file tree themselves.
 - Do not run `mvn install` or `mvn deploy` — `package` is enough for build artifacts.
 - Do not modify `pom.xml`, `app.scripts.json`, `wm.xml`, or any WaveMaker source to "make the build pass". If it doesn't build, surface the error and stop.
 - Do not push any image to a registry — building is local. Pushing is the user's call.
-- Do not overwrite an existing `Dockerfile`, `Dockerfile.frontend`, or `Dockerfile.backend`. For the main `Dockerfile`, use it as-is (the user shipped it on purpose). For the `.frontend`/`.backend` variants, write `<name>.new` and let the user diff.
+- Do not overwrite an existing `Dockerfile`. Use it as-is — the user shipped it on purpose.
 - Do not invent database credentials, env vars, or `docker-compose.yml`. If the app needs a DB at runtime, mention it once but don't scaffold it.
 - Do not delete the user's `target/` beyond what `mvn clean` does. Leave intermediate `target/frontend/` and `target/backend-extract/` for inspection. Don't delete a user-provided `.zip` or its extracted `build/` folder either.
 - Do not run tests by default. Only run `mvn test` (or omit `-DskipTests`) if the user explicitly asks.
