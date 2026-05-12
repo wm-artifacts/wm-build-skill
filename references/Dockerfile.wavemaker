@@ -1,5 +1,5 @@
 # Define build arguments for WaveMaker version and profile
-# For more info follow this link https://docs.wavemaker.com/learn/app-development/deployment/build-with-docker/#build-docker-image
+# For more info follow this link https://docs.wavemaker.ai/docs/build-and-deploy/build/web/package/docker/docker-image
 ARG wavemaker_version=latest
 
 # Stage 1: Build the web application artifact

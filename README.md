@@ -1,6 +1,6 @@
 # wavemaker-build
 
-A Claude Code skill that builds a WaveMaker application into any of four artifact shapes — WAR, full-app Docker image, frontend-only zip, or backend-only WAR/JAR — so the resulting artifact can be deployed to whichever target you're aiming for (Tomcat, EC2, Kubernetes, S3 + CDN, App Service, etc.).
+A Claude Code skill that builds a WaveMaker application into any of four artifact shapes — WAR, full-app Docker image, frontend-only zip, or backend-only WAR — so the resulting artifact can be deployed to whichever target you're aiming for (Tomcat, EC2, Kubernetes, S3 + CDN, App Service, etc.).
 
 The skill **produces artifacts**. It does not push to registries or deploy remotely.
 
@@ -11,7 +11,7 @@ The skill **produces artifacts**. It does not push to registries or deploy remot
 | WAR | `target/<app>-<version>.war` | Tomcat / JBoss / WaveMaker Cloud |
 | Full Docker image | `<app>:latest` in local Docker | EC2 / ECS / Kubernetes / GKE / Azure CI |
 | Frontend only | `target/<app>-frontend.zip` | S3 + CloudFront / Netlify / Vercel / any CDN |
-| Backend only | `target/<app>-backend.war` (or per-service JARs) | Tomcat / Beanstalk / App Service / Heroku |
+| Backend only | `target/<app>-backend.war` | Tomcat / Beanstalk / App Service |
 
 ## Inputs the skill accepts
 
@@ -32,7 +32,7 @@ Open Claude Code inside your WaveMaker app folder and use natural phrasing. The 
 | `build my wavemaker app as war` | WAR |
 | `package this wm app as a docker image` | Full Docker image |
 | `give me only the frontend artifacts` | Frontend zip |
-| `build only the backend` | Backend WAR/JAR |
+| `build only the backend` | Backend WAR |
 | `build my wm app multiple ways` | Asks which modes |
 | `build with profile staging` | Same as above, but uses `-P staging` |
 
