@@ -131,30 +131,6 @@ Use the same profile resolution from Step 3:
 
 If the user wants a specific WaveMaker runtime version (e.g. `11.7.0`), pass `--build-arg wavemaker_version=11.7.0`.
 
-**Local-browse companion image:**
-
-The base image built above is the right artifact to *deploy* — but WaveMaker apps default to forcing HTTPS via `request.isSecure()` (see https://docs.wavemaker.com/learn/how-tos/ssl-offloading), so opening `http://localhost:8080/<app>/` in a browser after a plain `docker run -p 8080:8080` redirects to a dead `https://localhost:443` and looks broken. In production a TLS-terminating proxy/LB sets `X-Forwarded-Proto: https` and the redirect is fine; locally there's no proxy.
-
-After every successful mode-2 build, also build a `:local`-tagged companion image that patches Tomcat's 8080 Connector to report `isSecure()=true` unconditionally. This is a local-testing convenience — never deploy the `:local` image to production.
-
-Use `~/.claude/skills/wavemaker-build/references/Dockerfile.local`. It expects a `--build-arg base=<base-image>` pointing at the image you just built:
-
-```bash
-docker build \
-    --build-arg base=<artifactId-lowercased>:latest \
-    -f ~/.claude/skills/wavemaker-build/references/Dockerfile.local \
-    -t <artifactId-lowercased>:latest-local \
-    ~/.claude/skills/wavemaker-build/references/
-```
-
-The user can then open `http://localhost:8080/<artifactId>/` in a browser with:
-
-```bash
-docker run --rm -p 8080:8080 <artifactId-lowercased>:latest-local
-```
-
-If the user explicitly says they don't want the local-browse image (e.g. they're building only for production deploy), skip it. Otherwise build both by default and mention both in the report-back.
-
 **Fallback templates — generic Maven + Tomcat / JRE (only if the user explicitly opts out of `wavemakerapp/*` images, e.g. air-gapped or no DockerHub access):**
 
 WAR packaging:
@@ -257,7 +233,7 @@ Output: `target/<artifactId>-backend.war` — Spring services, web.xml, classes,
 For each artifact built, give one short bullet:
 
 - **WAR** → path + `deploy by dropping into Tomcat's webapps/`
-- **Docker image (full)** → image tag + `docker run --rm -p 8080:8080 <tag>`. Also report the `:latest-local` companion (built automatically) with: "open http://localhost:8080/<artifactId>/ in a browser after `docker run --rm -p 8080:8080 <tag>-local`. Local-testing only — deploy the non-`-local` image to production behind a TLS-terminating proxy."
+- **Docker image (full)** → image tag + `docker run --rm -p 8080:8080 <tag>` (deploy behind a TLS-terminating proxy that sets `X-Forwarded-Proto: https`)
 - **Frontend zip** → path + "extract to any static host / S3 / nginx"
 - **Backend WAR** → path + drop into Tomcat's `webapps/`
 
