@@ -1,6 +1,6 @@
 ---
 name: wavemaker-build
-description: Build a WaveMaker application in one or more ways - WAR package, Docker image, frontend-only artifacts (UI bundle), or backend-only artifacts (services WAR/JAR). Use when the user says things like "build my wavemaker app", "package wavemaker as war", "give me only the frontend artifacts from my wm app", "build only the backend", "build wm app multiple ways", or asks how to package a WaveMaker app for deployment in any of the modes from https://docs.wavemaker.ai/docs/build-and-deploy/overview.
+description: Build a WaveMaker application in one or more ways - WAR package, Docker image, frontend-only artifacts (UI bundle), or backend-only WAR (services WAR with the UI stripped). Use when the user says things like "build my wavemaker app", "package wavemaker as war", "give me only the frontend artifacts from my wm app", "build only the backend", "build wm app multiple ways", or asks how to package a WaveMaker app for deployment in any of the modes from https://docs.wavemaker.ai/docs/build-and-deploy/overview.
 ---
 
 # WaveMaker → build artifacts (WAR / Docker / frontend / backend)
@@ -18,7 +18,7 @@ The skill exists to produce the right *shape* of artifact for whichever deployme
 | **WAR** | Any servlet container — Tomcat, JBoss, WebSphere; WaveMaker Cloud; on-prem Tomcat on a VM |
 | **Docker image (full app)** | Any Docker host — EC2, ECS, GKE, Kubernetes, Azure Container Instances, on-prem |
 | **Frontend zip** | Any static host — S3 + CloudFront, Netlify, Vercel, Azure Static Web Apps, GitHub Pages, nginx from disk, any CDN |
-| **Backend WAR/JAR** | Tomcat (drop into `webapps/`), `java -jar` on a VM, AWS Elastic Beanstalk, Azure App Service, Heroku |
+| **Backend WAR** | Tomcat (drop into `webapps/`), AWS Elastic Beanstalk, Azure App Service |
 
 If the user's deployment style isn't obvious, ask which target they're aiming for and pick the matching mode in Step 2.
 
@@ -53,7 +53,7 @@ If the user already named the build mode in their prompt (e.g. "give me only the
 > 1. **WAR** — standard deployable, output in `target/*.war`
 > 2. **Docker image (full app)** — runnable container of the whole app
 > 3. **Frontend only** — UI bundle (html/js/css) as a zip, for CDN/static hosting
-> 4. **Backend only** — services WAR/JAR with the UI stripped
+> 4. **Backend only** — services WAR with the UI stripped
 > 5. **All artifacts (1, 3, 4)**
 
 Don't assume; multi-select is fine.
@@ -63,11 +63,11 @@ Don't assume; multi-select is fine.
 Read `<artifactId>`, `<version>`, `<packaging>`, and the list of `<profiles>` from `APP_DIR/pom.xml`. You'll use:
 
 - `artifactId` (lowercased) for output filenames and Docker tags
-- `<packaging>` (`war` or `jar`) — default to `war` if missing
+- `<packaging>` — should be `war` (WaveMaker default)
 - `<java.version>` / `<maven.compiler.target>` if present, to pick the JDK in any Dockerfile
 - `<profiles>` — list each `<profile><id>...</id>` so you know which profile flag to pass to Maven
 
-Note the built artifact will be `target/<artifactId>-<version>.war` (or `.jar`).
+Note the built artifact will be `target/<artifactId>-<version>.war`.
 
 ### Profile selection
 
@@ -184,31 +184,6 @@ EXPOSE 8080
 CMD ["catalina.sh", "run"]
 ```
 
-JAR packaging (Spring Boot fat jar):
-
-```dockerfile
-# syntax=docker/dockerfile:1
-FROM maven:3.9-eclipse-temurin-11 AS build
-WORKDIR /src
-
-RUN mkdir -p /usr/local/content/node \
-    && cd /usr/local/content/node \
-    && curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.gz -o node.tar.gz \
-    && tar -xzf node.tar.gz \
-    && ln -s /usr/local/content/node/node-v20.18.0-linux-x64/bin/node /usr/local/bin/node \
-    && ln -s /usr/local/content/node/node-v20.18.0-linux-x64/bin/npm /usr/local/bin/npm \
-    && rm -f node.tar.gz
-
-COPY . .
-RUN mvn -B -DskipTests clean package
-
-FROM eclipse-temurin:11-jre
-WORKDIR /app
-COPY --from=build /src/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
-```
-
 Notes:
 - The official `wavemakerapp/*` template is the preferred default — it matches what WaveMaker docs prescribe and the runtime images are tuned for WaveMaker apps. Only fall back to the generic Maven/Tomcat template when the user can't pull from `wavemakerapp/*`.
 - For the fallback template: pin Java 11 by default. Bump both stages to `17` if `pom.xml` declares `<java.version>17</java.version>` or `maven.compiler.target` 17.
@@ -255,27 +230,20 @@ If the user only wants the unzipped folder, skip the zip step and point them at 
 
 ### 4d. Backend only (mode 4)
 
-First check whether the project has a multi-module `services/` layout (each backend service compiles to its own JAR):
+Derive a backend-only WAR from the full WAR by stripping the UI:
 
 ```bash
-ls APP_DIR/services/*/target/*.jar 2>/dev/null
+./mvnw -B -DskipTests $MVN_PROFILE_ARG clean package
+WAR=$(ls target/*.war | head -1)
+mkdir -p target/backend-extract
+unzip -q "$WAR" -d target/backend-extract
+# Keep only WEB-INF and META-INF — drop UI assets
+find target/backend-extract -mindepth 1 -maxdepth 1 \
+    ! -name 'WEB-INF' ! -name 'META-INF' -exec rm -rf {} +
+(cd target/backend-extract && zip -qr "../<artifactId>-backend.war" .)
 ```
 
-- **If those JARs exist** → those *are* the backend artifacts. Tell the user the paths and stop. Don't repackage.
-- **Otherwise** → derive a backend-only WAR from the full WAR by stripping the UI:
-
-  ```bash
-  ./mvnw -B -DskipTests $MVN_PROFILE_ARG clean package
-  WAR=$(ls target/*.war | head -1)
-  mkdir -p target/backend-extract
-  unzip -q "$WAR" -d target/backend-extract
-  # Keep only WEB-INF and META-INF — drop UI assets
-  find target/backend-extract -mindepth 1 -maxdepth 1 \
-      ! -name 'WEB-INF' ! -name 'META-INF' -exec rm -rf {} +
-  (cd target/backend-extract && zip -qr "../<artifactId>-backend.war" .)
-  ```
-
-  Output: `target/<artifactId>-backend.war` — Spring services, web.xml, classes, libs only.
+Output: `target/<artifactId>-backend.war` — Spring services, web.xml, classes, libs only.
 
 ## Step 5 — preflight checks
 
@@ -291,7 +259,7 @@ For each artifact built, give one short bullet:
 - **WAR** → path + `deploy by dropping into Tomcat's webapps/`
 - **Docker image (full)** → image tag + `docker run --rm -p 8080:8080 <tag>`. Also report the `:latest-local` companion (built automatically) with: "open http://localhost:8080/<artifactId>/ in a browser after `docker run --rm -p 8080:8080 <tag>-local`. Local-testing only — deploy the non-`-local` image to production behind a TLS-terminating proxy."
 - **Frontend zip** → path + "extract to any static host / S3 / nginx"
-- **Backend WAR/JAR** → path + how to run (Tomcat drop-in or `java -jar`)
+- **Backend WAR** → path + drop into Tomcat's `webapps/`
 
 Keep the report compact — the user can see the file tree themselves.
 
