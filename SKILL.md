@@ -85,7 +85,7 @@ Set `MVN_PROFILE_ARG` to either `-P <profile-name>` or empty, and reuse it for e
 
 Run from `APP_DIR`. Prefer the Maven wrapper (`./mvnw`) when it exists and is executable; otherwise use `mvn`. Always pass `-B -DskipTests` unless the user explicitly asks for tests. Always pass `$MVN_PROFILE_ARG` from Step 3 (it's either `-P deployment`, another profile name, or empty).
 
-WaveMaker's parent pom triggers a `ui-build.js` antrun step that runs Node — make sure Node 20+ is on PATH locally, or warn the user. Node 18 fails on `undici`'s `File` global referenced by recent angular-codegen releases. If the local Node version is the blocker, suggest the user run one of the Docker modes below instead — those Dockerfile build stages pin Node 20 internally.
+WaveMaker's parent pom triggers a `ui-build.js` antrun step that runs Node — make sure Node 20+ is on PATH locally, or warn the user. Node 18 fails on `undici`'s `File` global referenced by recent angular-codegen releases. If the local Node version is the blocker, suggest the user run the Docker mode below instead — its Dockerfile build stage pins Node 20 internally.
 
 ### 4a. WAR (mode 1)
 
@@ -130,6 +130,30 @@ Use the same profile resolution from Step 3:
 - No profiles in pom.xml → drop the `profile` build-arg entirely.
 
 If the user wants a specific WaveMaker runtime version (e.g. `11.7.0`), pass `--build-arg wavemaker_version=11.7.0`.
+
+**Local-browse companion image:**
+
+The base image built above is the right artifact to *deploy* — but WaveMaker apps default to forcing HTTPS via `request.isSecure()` (see https://docs.wavemaker.com/learn/how-tos/ssl-offloading), so opening `http://localhost:8080/<app>/` in a browser after a plain `docker run -p 8080:8080` redirects to a dead `https://localhost:443` and looks broken. In production a TLS-terminating proxy/LB sets `X-Forwarded-Proto: https` and the redirect is fine; locally there's no proxy.
+
+After every successful mode-2 build, also build a `:local`-tagged companion image that patches Tomcat's 8080 Connector to report `isSecure()=true` unconditionally. This is a local-testing convenience — never deploy the `:local` image to production.
+
+Use `~/.claude/skills/wavemaker-build/references/Dockerfile.local`. It expects a `--build-arg base=<base-image>` pointing at the image you just built:
+
+```bash
+docker build \
+    --build-arg base=<artifactId-lowercased>:latest \
+    -f ~/.claude/skills/wavemaker-build/references/Dockerfile.local \
+    -t <artifactId-lowercased>:latest-local \
+    ~/.claude/skills/wavemaker-build/references/
+```
+
+The user can then open `http://localhost:8080/<artifactId>/` in a browser with:
+
+```bash
+docker run --rm -p 8080:8080 <artifactId-lowercased>:latest-local
+```
+
+If the user explicitly says they don't want the local-browse image (e.g. they're building only for production deploy), skip it. Otherwise build both by default and mention both in the report-back.
 
 **Fallback templates — generic Maven + Tomcat / JRE (only if the user explicitly opts out of `wavemakerapp/*` images, e.g. air-gapped or no DockerHub access):**
 
@@ -265,7 +289,7 @@ ls APP_DIR/services/*/target/*.jar 2>/dev/null
 For each artifact built, give one short bullet:
 
 - **WAR** → path + `deploy by dropping into Tomcat's webapps/`
-- **Docker image (full)** → image tag + `docker run --rm -p 8080:8080 <tag>`
+- **Docker image (full)** → image tag + `docker run --rm -p 8080:8080 <tag>`. Also report the `:latest-local` companion (built automatically) with: "open http://localhost:8080/<artifactId>/ in a browser after `docker run --rm -p 8080:8080 <tag>-local`. Local-testing only — deploy the non-`-local` image to production behind a TLS-terminating proxy."
 - **Frontend zip** → path + "extract to any static host / S3 / nginx"
 - **Backend WAR/JAR** → path + how to run (Tomcat drop-in or `java -jar`)
 
@@ -276,7 +300,7 @@ Keep the report compact — the user can see the file tree themselves.
 - Do not run `mvn install` or `mvn deploy` — `package` is enough for build artifacts.
 - Do not modify `pom.xml`, `app.scripts.json`, `wm.xml`, or any WaveMaker source to "make the build pass". If it doesn't build, surface the error and stop.
 - Do not push any image to a registry — building is local. Pushing is the user's call.
-- Do not overwrite an existing `Dockerfile`. Use it as-is — the user shipped it on purpose.
+- Do not overwrite an existing `Dockerfile`. Use it as-is (the user shipped it on purpose).
 - Do not invent database credentials, env vars, or `docker-compose.yml`. If the app needs a DB at runtime, mention it once but don't scaffold it.
 - Do not delete the user's `target/` beyond what `mvn clean` does. Leave intermediate `target/frontend/` and `target/backend-extract/` for inspection. Don't delete a user-provided `.zip` or its extracted `build/` folder either.
 - Do not run tests by default. Only run `mvn test` (or omit `-DskipTests`) if the user explicitly asks.

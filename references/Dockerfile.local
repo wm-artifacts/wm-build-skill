@@ -1,0 +1,24 @@
+# Local-browse companion image for a WaveMaker Docker build.
+#
+# Why this exists:
+#   WaveMaker apps call request.isSecure() and 302-redirect to https://host:443
+#   when the request isn't HTTPS (see the WaveMaker SSL-offloading docs:
+#   https://docs.wavemaker.com/learn/how-tos/ssl-offloading).
+#   In production this is correct — a TLS-terminating proxy / LB / CDN sits
+#   in front and sets X-Forwarded-Proto: https, so Tomcat reports isSecure()=true.
+#   In a local `docker run -p 8080:8080`, there's no proxy, so the redirect
+#   bounces to a dead :443 listener and the browser hangs.
+#
+# What this image does:
+#   Patches Tomcat's 8080 Connector in server.xml to declare scheme="https"
+#   secure="true" proxyPort="443". Tomcat then reports isSecure()=true for
+#   every connection regardless of how it actually arrived, so the WaveMaker
+#   redirect logic is satisfied and the app serves plain HTTP on 8080.
+#
+# DO NOT ship this image to production. The base image (without "-local") is
+# the right one to deploy behind a real TLS-terminating proxy.
+
+ARG base
+FROM ${base} 
+RUN sed -i 's|<Connector port="8080"|<Connector scheme="https" secure="true" proxyPort="443" port="8080"|' \
+        /usr/local/tomcat/conf/server.xml
