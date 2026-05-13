@@ -1,4 +1,4 @@
-# wm-build-skill
+# wm-local-dev-skill
 
 A collection of Claude Code skills for local WaveMaker development tasks.
 
